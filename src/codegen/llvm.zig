@@ -1336,7 +1336,11 @@ pub const Object = struct {
             .time_report = options.time_report,
             .tsan = options.sanitize_thread,
             .sancov = options.fuzz,
-            .lto = options.lto != .none,
+            .lto = switch (options.lto) {
+                .none => .None,
+                .thin => .ThinPreLink,
+                .full => .FullPreLink,
+            },
             // https://github.com/ziglang/zig/issues/21215
             .allow_fast_isel = !comp.root_mod.resolved_target.result.cpu.arch.isMIPS(),
             .asm_filename = null,
