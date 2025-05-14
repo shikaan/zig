@@ -267,6 +267,30 @@ pub fn float(r: Random, comptime T: type) T {
     // Then generate an exponentially biased random value for the exponent.
     // This covers every possible value in the range.
     switch (T) {
+        f16 => {
+            // Use 10 random bits for the mantissa, the rest for the exponent.
+            const rand = r.int(u64);
+            var rand_lz = @clz(rand);
+            const mantissa: u10 = @truncate(rand);
+            // We want to generate a 5-bit exponent
+            // Exponents are adjusted to be between [-15, 16]
+            // (i.e., the number represented by the 5 bits gets 15 subtracted).
+            // To stay in [0, 1) we need the exponent to be [-15, -1], that is
+            // generating a number between 0 and 14.
+
+            // The leading zeros of a random integer form an exponential
+            // distribution ( P(clz = 0) == 0.5; P(clz = 1) == 0.25; ...).
+            // We need an esponential distribution to compensate for the natural
+            // bias of floats away from zero.
+            if (rand_lz > 14) {
+                @branchHint(.unlikely);
+                rand_lz = @clz(r.int(u64));
+                rand_lz = if (rand_lz <= 14) rand_lz else 14;
+            }
+
+            const exponent = @as(u16, 14 - rand_lz) << 10;
+            return @bitCast(exponent | mantissa);
+        },
         f32 => {
             // Use 23 random bits for the mantissa, and the rest for the exponent.
             // If all 41 bits are zero, generate additional random bits, until a

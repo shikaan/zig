@@ -294,13 +294,17 @@ test "Random float correctness" {
 
     var i: usize = 0;
     while (i < 1000) : (i += 1) {
-        const val1 = random.float(f32);
+        const val1 = random.float(f16);
         try expect(val1 >= 0.0);
         try expect(val1 < 1.0);
 
-        const val2 = random.float(f64);
+        const val2 = random.float(f32);
         try expect(val2 >= 0.0);
         try expect(val2 < 1.0);
+
+        const val3 = random.float(f64);
+        try expect(val3 >= 0.0);
+        try expect(val3 < 1.0);
     }
 }
 
@@ -311,15 +315,19 @@ test "Random float coverage" {
 
     const rand_f64 = random.float(f64);
     const rand_f32 = random.float(f32);
+    const rand_f16 = random.float(f16);
 
     try expect(rand_f32 == 0.0);
     try expect(rand_f64 == 0.0);
+    try expect(rand_f16 == 0.0);
 }
 
 test "Random float chi-square goodness of fit" {
     const num_numbers = 100000;
-    const num_buckets = 1000;
+    const num_buckets = 500;
 
+    var f16_hist = std.AutoHashMap(u16, u32).init(std.testing.allocator);
+    defer f16_hist.deinit();
     var f32_hist = std.AutoHashMap(u32, u32).init(std.testing.allocator);
     defer f32_hist.deinit();
     var f64_hist = std.AutoHashMap(u64, u32).init(std.testing.allocator);
@@ -330,15 +338,22 @@ test "Random float chi-square goodness of fit" {
 
     var i: usize = 0;
     while (i < num_numbers) : (i += 1) {
+        const rand_f16 = random.float(f16);
         const rand_f32 = random.float(f32);
         const rand_f64 = random.float(f64);
+        const f16_put = try f16_hist.getOrPut(@as(u16, @intFromFloat(rand_f16 * @as(f16, @floatFromInt(num_buckets)))));
+        if (f16_put.found_existing) {
+            f16_put.value_ptr.* += 1;
+        } else {
+            f16_put.value_ptr.* = 1;
+        }
         const f32_put = try f32_hist.getOrPut(@as(u32, @intFromFloat(rand_f32 * @as(f32, @floatFromInt(num_buckets)))));
         if (f32_put.found_existing) {
             f32_put.value_ptr.* += 1;
         } else {
             f32_put.value_ptr.* = 1;
         }
-        const f64_put = try f64_hist.getOrPut(@as(u32, @intFromFloat(rand_f64 * @as(f64, @floatFromInt(num_buckets)))));
+        const f64_put = try f64_hist.getOrPut(@as(u64, @intFromFloat(rand_f64 * @as(f64, @floatFromInt(num_buckets)))));
         if (f64_put.found_existing) {
             f64_put.value_ptr.* += 1;
         } else {
@@ -346,8 +361,20 @@ test "Random float chi-square goodness of fit" {
         }
     }
 
+    var f16_total_variance: f64 = 0;
     var f32_total_variance: f64 = 0;
     var f64_total_variance: f64 = 0;
+
+    {
+        var j: u16 = 0;
+        while (j < num_buckets) : (j += 1) {
+            const count = @as(f64, @floatFromInt((if (f16_hist.get(j)) |v| v else 0)));
+            const expected = @as(f64, @floatFromInt(num_numbers)) / @as(f64, @floatFromInt(num_buckets));
+            const delta = count - expected;
+            const variance = (delta * delta) / expected;
+            f16_total_variance += variance;
+        }
+    }
 
     {
         var j: u32 = 0;
@@ -375,6 +402,7 @@ test "Random float chi-square goodness of fit" {
     // Critical value is calculated by opening a Python interpreter and running:
     // scipy.stats.chi2.isf(0.05, num_buckets - 1)
     const critical_value = 1073.6426506574246;
+    try expect(f16_total_variance < critical_value);
     try expect(f32_total_variance < critical_value);
     try expect(f64_total_variance < critical_value);
 }
